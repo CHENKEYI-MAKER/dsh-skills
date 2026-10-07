@@ -224,3 +224,28 @@ DSH 的技能发现只认**机器上的目录**，没有"上传到平台全员�
 
 同名的技能，优先级高的覆盖优先级低的。所以员工的个人技能可以覆盖公司技能 ——
 这是对的：公司给默认做法，个人可以有自己的变体。
+
+### 两种"装上"的方式，别搞混
+
+| 方式 | 命令 | 落在哪一层 | 给谁用 |
+| --- | --- | --- | --- |
+| **插件挂载**（正路） | `dsh plugin --profile web add github:CHENKEYI-MAKER/dsh-skills` | 优先级 **300**，与个人技能同一台机器但层级更稳 | **全员** |
+| 符号链接 | `node tools/publish-skill.mjs --skill <名>` 自动建的 `~/.dsh/skills/dsh-skills` | 优先级 **400**（个人层） | 维护者本机改技能时 |
+
+维护者用链接是因为**改完源码立即生效**（热加载），省掉来回重装；
+发给别人一律用插件命令。`tools/publish-skill.mjs` 里的安装那一步就是建这个链接，
+它默认走链接、只做文件层复验 —— 因为它跑在没有 `dsh` 命令的机器上时，
+没法替你验证插件层。
+
+### 本机 git 连不上 github.com 时
+
+这台机器上有时代理没自动生效，表现为 `fatal: unable to access
+'https://github.com/...': Empty reply from server`。查一下本机代理端口再指过去：
+
+```bash
+lsof -nP -iTCP -sTCP:LISTEN | grep -i nano     # 找那个监听端口（本机实测 65532）
+git config --global http.proxy  http://127.0.0.1:65532
+git config --global https.proxy http://127.0.0.1:65532
+```
+
+**别把端口写进脚本**：它是会话级的，每次可能不一样。写在 git 全局 config 里就够了。
