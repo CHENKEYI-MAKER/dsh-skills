@@ -1,0 +1,24 @@
+{
+  "name": "dsh-company-skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Company-wide SOP skills for DeepSeek Harness: one folder per procedure, installed as a DSH plugin.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "check": "node tools/validate.mjs",
+    "check:json": "node tools/validate.mjs --json"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "skills"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

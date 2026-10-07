@@ -1,0 +1,15 @@
+# 公司资料技能库 ── 挂载技能目录
+#
+# 这个文件只有一件事：告诉 DSH「本包 skills/ 目录里还有一批技能，请一并加载」。
+#
+# 为什么要绕这一道：DSH 的技能发现只认**机器上的目录**（~/.dsh/skills、项目里的
+# .dsh/skills）。没有"上传到某个平台全员可见"的机制。所以组织级技能库的做法是
+# ——把技能随一个插件包发出去，由这个 patch 把目录注册进 DSH 的技能发现流程。
+#
+# 路径用 createRequire 从「本包」反查，因此**不管 pnpm 把它装在哪个哈希目录下都能找到**，
+# 不会因为换机器、换 store 而失效。（官方包 @deepseek-ai/dsh-agent-preset 用的是同一手法。）
+- id: skill-filesystem
+  config:
+    customSkillDirs:
+      - !!js >-
+        process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-company-skills/package.json')), 'skills')
