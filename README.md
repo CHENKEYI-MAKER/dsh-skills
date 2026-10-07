@@ -239,13 +239,21 @@ DSH 的技能发现只认**机器上的目录**，没有"上传到平台全员�
 
 ### 本机 git 连不上 github.com 时
 
-这台机器上有时代理没自动生效，表现为 `fatal: unable to access
-'https://github.com/...': Empty reply from server`。查一下本机代理端口再指过去：
+有些环境里 git 直连 github.com 不通，表现为：
 
-```bash
-lsof -nP -iTCP -sTCP:LISTEN | grep -i nano     # 找那个监听端口（本机实测 65532）
-git config --global http.proxy  http://127.0.0.1:65532
-git config --global https.proxy http://127.0.0.1:65532
+```
+fatal: unable to access 'https://github.com/...': Empty reply from server
 ```
 
-**别把端口写进脚本**：它是会话级的，每次可能不一样。写在 git 全局 config 里就够了。
+这种情况下本机通常已经有一个本地代理在监听。先找到那个端口，再指给 git：
+
+```bash
+# 找本机的代理监听端口（端口号各机器不同，别照抄）
+lsof -nP -iTCP -sTCP:LISTEN | grep -iE 'nano|proxy'
+# 假设查到 65532，就：
+git config --global http.proxy  http://127.0.0.1:<端口>
+git config --global https.proxy http://127.0.0.1:<端口>
+```
+
+**别把端口写进仓库里的任何脚本**：它是会话级的，每次可能不一样。
+写在 git 全局 config 里就够了，与仓库无关。
