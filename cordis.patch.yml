@@ -12,4 +12,4 @@
   config:
     customSkillDirs:
       - !!js >-
-        process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-company-skills/package.json')), 'skills')
+        process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-skills/package.json')), 'skills')

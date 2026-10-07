@@ -5,11 +5,11 @@
 
 - 安装（员工侧，一条命令）：
   ```sh
-  dsh plugin --profile web add github:CHENKEYI-MAKER/dsh-company-skills
+  dsh plugin --profile web add github:CHENKEYI-MAKER/dsh-skills
   ```
 - 更新（你加了新 SOP 之后）：
   ```sh
-  dsh plugin --profile web update dsh-company-skills
+  dsh plugin --profile web update dsh-skills
   ```
 
 ---
@@ -17,9 +17,11 @@
 ## 一、这个仓库长什么样
 
 ```
-dsh-company-skills/
+dsh-skills/
 ├── package.json              # 声明 dsh.bundle，让 DSH 认识这个包
 ├── cordis.patch.yml          # 3 行，把 skills/ 目录注册进 DSH 的技能发现
+├── capabilities.md           # ★ 技能清单（数字 DNA）：技能名 / 触发条件 / 维护人 / 版本 / 入库时间
+├── VERSION                   # 技能库整体版本号，每入库一个技能 +1
 ├── skills/                   # ★ 所有技能都在这里，一个 SOP 一个目录
 │   ├── expense-report/
 │   │   ├── SKILL.md          # 必须叫这个名字，且必须有 frontmatter
@@ -34,7 +36,8 @@ dsh-company-skills/
 ├── templates/
 │   └── skill-template.md     # 新技能从这复制
 └── tools/
-    └── validate.mjs          # 校验器：npm run check
+    ├── validate.mjs          # 校验器：npm run check
+    └── publish-skill.mjs     # 入库 + 安装：npm run publish -- --skill <名字>
 ```
 
 **核心概念**：技能 = 一个目录 + 里面的 `SKILL.md`。
@@ -123,6 +126,36 @@ npm run check
 - 两个技能的 `description` 重合度 ≥35% → 报错（它们会互相抢触发，模型随机挑一个）
 - 20%~35% → 警告，提醒确认边界
 
+### 5. 一条命令入库并安装
+
+技能写好了、校验过了，用这一条命令完成**入库 + 安装 + 复验**：
+
+```sh
+npm run publish -- --skill <技能名>
+```
+
+它按顺序做四件事，**任何一步失败都会停下并打印修复计划**：
+
+| 步骤 | 做什么 | 失败时会怎样 |
+| --- | --- | --- |
+| 1 | 跑校验器 | 不合格就停，**不留半个提交** |
+| 2 | 更新 `capabilities.md` 与 `VERSION`（+1） | — |
+| 3 | `git add` 只加这个技能目录 + 两个元数据文件 → commit `feat(skill): <名字> v1` → `git log` 复验 → 推送 | 推送失败会明说"提交已在本地" |
+| 4 | 把 `~/.dsh/skills/<库名>` 链到本仓 `skills/`，再**从加载目录读回来**确认这个技能真的在 | 安装或复验失败就如实报错，不假装成功 |
+
+常用参数：
+
+```sh
+npm run publish -- --skill expense-report --dry-run    # 只校验和预演，不写任何文件
+npm run publish -- --skill expense-report --no-push    # 提交但不推送
+npm run publish -- --skill expense-report --json       # 给脚本用的结构化结果
+```
+
+两条设计取舍值得知道：
+
+- **用符号链接而不是复制**：改完源码立即生效（DSH 的技能发现是热加载的，实测同一秒就更新），不用重装。
+- **重复跑不会把版本号刷上去**：内容与已提交的一致时，脚本什么都不做，只回一句"已是最新"。
+
 ---
 
 ## 三、治理规矩（重要）
@@ -172,7 +205,7 @@ DSH 的技能发现只认**机器上的目录**，没有"上传到平台全员�
   config:
     customSkillDirs:
       - !!js >-
-        ...createRequire(baseUrl).resolve('dsh-company-skills/package.json').../skills
+        ...createRequire(baseUrl).resolve('dsh-skills/package.json').../skills
 ```
 
 用 `createRequire` 反查路径，是为了让它在 pnpm 的哈希目录结构下也能找到自己
