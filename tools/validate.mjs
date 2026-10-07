@@ -12,6 +12,10 @@
 //   6. description 之间近似重复 —— 两个技能都声称处理同一件事，模型会随机挑一个
 //   7. description 里没有"什么时候用/不适用"的线索
 //
+// 做"结构是否统一"的校验（公司标准四段）：
+//   8. 必须含 ## 触发条件 / ## 步骤 / ## 坑 / ## 验收标准，且**顺序正确**
+//   9. 技能里不许出现"需要用户回答的技术问题"（技能的读者是 AI，不是人）
+//
 // 零第三方依赖（自己解析 frontmatter，不引 js-yaml）。
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
@@ -28,6 +32,38 @@ const BODY_MIN = 80
 // description 里出现这些词却没有任何触发条件，等于在说"我是个好流程"
 const VAGUE_WORDS = ['流程', '规范', '制度', '相关工作', '有关事项', '等等']
 const TRIGGER_HINTS = ['当', '需要', '如果', '若', '在…时', '时使用', '时用', '用于', '适用于', '触发', '不适用', '请求', '询问', '提交']
+
+// 公司标准四段，顺序不可换（顺序代表"先判断该不该用，再执行，再避坑，最后验收"）
+const REQUIRED_SECTIONS = ['触发条件', '步骤', '坑', '验收标准']
+
+// 技能是写给 AI 执行的，出现这些问句说明把"该自己判断的事"推给了人。
+// ⚠️ 只在**去掉代码块/行内代码/引用/引号内示例/表格**之后才扫，
+// 否则"坑"小节里引用的反例会把自己误判成违规。
+const ASK_HUMAN_PATTERNS = [
+  /你(?:需要|要|想)(?:用|使用)哪[个些]/,
+  /请(?:问|告诉)用户(?:你)?(?:用|使用)什么/,
+  /需要(?:用户|你)回答/,
+  /你的(?:操作)?系统是(?:什么|哪)/,
+]
+
+/**
+ * 把"引用别人错误做法"的地方去掉，只留正文自己的主张：
+ * 代码块（含围栏行）、行内代码、引用行、**禁止项（❌ 开头的规则本身就是反例）**、表格行。
+ */
+function stripQuoted(body) {
+  const withoutFences = body
+    .split('\n')
+    .filter((line) => !/^\s*(```|~~~)/.test(line))
+    .join('\n')
+  const noBlocks = withoutFences.split(/```[\s\S]*?```/).join('\n')
+  return noBlocks
+    .split('\n')
+    .filter((line) => !/❌/.test(line)) // 禁止项行：它描述的就是"不该出现什么"
+    .join('\n')
+    .replace(/`[^`\n]*`/g, '')
+    .replace(/^\s*>.*$/gm, '')
+    .replace(/^\s*\|.*\|\s*$/gm, '')
+}
 
 function findSkillsRoot() {
   const here = fileURLToPath(import.meta.url)
@@ -163,6 +199,43 @@ function validate(root) {
     if (!body) problems.push(`${entry}/SKILL.md：正文为空（正文是给 AI 执行的指令，不能只有 frontmatter）`)
     else if (body.replace(/^#.*$/gm, '').trim().length < BODY_MIN) {
       warnings.push(`${entry}/SKILL.md：正文只有 ${body.length} 字，偏薄，可能不足以执行`)
+    }
+
+    if (body) {
+      // 公司标准四段：必须齐全，且顺序不能换
+      const headings = [...body.matchAll(/^##\s+(.+?)\s*$/gm)].map((m) => m[1].trim())
+      const missing = REQUIRED_SECTIONS.filter((s) => !headings.includes(s))
+      if (missing.length) {
+        problems.push(`${entry}/SKILL.md：缺少标准小节 ${missing.map((s) => `## ${s}`).join('、')}（公司标准结构：触发条件 → 步骤 → 坑 → 验收标准）`)
+      } else {
+        const order = REQUIRED_SECTIONS.map((s) => headings.indexOf(s))
+        for (let i = 1; i < order.length; i++) {
+          if (order[i] < order[i - 1]) {
+            problems.push(`${entry}/SKILL.md：标准小节顺序不对（当前顺序：${headings.filter((h) => REQUIRED_SECTIONS.includes(h)).map((s) => `## ${s}`).join(' → ')}）—— 必须按 触发条件 → 步骤 → 坑 → 验收标准`)
+            break
+          }
+        }
+      }
+
+      // 技能是写给 AI 执行的：不该留下需要人来回答的技术问题。
+      // 逐行判：**同一行出现否定词就不算违规**（"验收标准里不许有任何需要人来回答的
+      // 技术问题"这类描述本身不是问题），否则禁止项自己会把自己判成违规。
+      const scannable = stripQuoted(body)
+      let hitText = null
+      for (const line of scannable.split('\n')) {
+        for (const re of ASK_HUMAN_PATTERNS) {
+          const m = re.exec(line)
+          if (!m) continue
+          const before = line.slice(0, m.index)
+          if (/(没有任何|没有|不含|不要|不许|禁止|不得|不可|无)/.test(before)) continue
+          hitText = m[0].trim()
+          break
+        }
+        if (hitText) break
+      }
+      if (hitText) {
+        problems.push(`${entry}/SKILL.md：正文出现「${hitText.slice(0, 30)}」这类需要人来回答的技术问题——环境判断和工具选择应由执行者自判`)
+      }
     }
 
     skills.push({ dir: entry, name: data.name ?? entry, description: data.description ?? '', whenToUse: data.whenToUse ?? '' })
