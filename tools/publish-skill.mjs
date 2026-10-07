@@ -125,26 +125,38 @@ function renderRow(r) {
 /**
  * 在表格里插入/更新一行技能条目：先按 name 排序重排整表。
  * 保留表格上方的说明文字与 frontmatter 原样不动。
+ *
+ * 三个字段的所有权分清楚（这是本函数最容易写错的地方）：
+ *   - `when`：**人工维护**。只在首次插入时用技能 description 的首句兜底；
+ *     以后不再覆盖 —— 否则每次入库都会把人工润色过的说明冲掉，产生无意义的 churn。
+ *   - `date`：首次入库记当天，之后永不改。
+ *   - `author` / `version`：脚本维护。
+ *
+ * 返回的 `changed` 表示"这一行真的需要重写吗"，用**逐行比较**而不是整表文本比较 ——
+ * 否则只要表里别的行被重排过，就会一直误判成"有变化"。
  */
-export function upsertCapabilitiesRow(text, entry) {
+export function upsertCapabilitiesRow(text, entry, { version } = {}) {
   const { rows } = parseCapabilities(text)
   const byName = new Map(rows.map((r) => [r.name, { ...r }]))
   const existing = byName.get(entry.name)
-  byName.set(entry.name, {
+
+  const merged = {
     name: entry.name,
-    when: entry.when,
+    when: existing?.when || entry.when,
     author: entry.author,
-    version: entry.version,
+    version: version || entry.version || existing?.version || '0.1.0',
     // 首次入库记当天；已存在的保留原来的入库时间
     date: existing?.date || entry.date,
-  })
+  }
+  byName.set(entry.name, merged)
 
+  const changed = !existing || renderRow(existing) !== renderRow(merged)
   const sorted = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'en'))
   const lines = text.split(/\r?\n/)
 
   // 找出表格行所在的区间：从第一条数据行到最后一条数据行
   const dataLineNums = rows.map((r) => r.line).sort((a, b) => a - b)
-  if (dataLineNums.length === 0) return { text, added: true }
+  if (dataLineNums.length === 0) return { text, added: true, changed: true }
 
   const first = dataLineNums[0]
   const last = dataLineNums[dataLineNums.length - 1]
@@ -152,7 +164,7 @@ export function upsertCapabilitiesRow(text, entry) {
   const after = lines.slice(last + 1)
   const wasNew = !existing
 
-  return { text: [...before, ...sorted.map(renderRow), ...after].join('\n'), added: wasNew }
+  return { text: [...before, ...sorted.map(renderRow), ...after].join('\n'), added: wasNew, changed }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -269,7 +281,6 @@ export function runPublish({
     // 2) capabilities.md + VERSION
     const versionFile = join(repo, VERSION_FILE)
     const oldVersion = existsSync(versionFile) ? readFileSync(versionFile, 'utf8').trim() : '0.1.0'
-    const newVersion = bumpPatch(oldVersion)
 
     const capsFile = join(repo, CAPABILITIES_FILE)
     const capsText = readFileSync(capsFile, 'utf8')
@@ -277,21 +288,22 @@ export function runPublish({
 
     // 先做一次"不换版本号"的预演：只有真的有事要做，才让 VERSION 往前走。
     // （否则每跑一次都把版本号 +1，再拿新版号重写清单 → 永远有 diff → 空提交）
-    const rowInput = { name: skillName, when: info.when, author: info.author, date: today(now) }
-    const preview = upsertCapabilitiesRow(capsText, { ...rowInput, version: oldVersion })
+    const rowInput = { name: skillName, when: info.when, author: info.author }
+    const preview = upsertCapabilitiesRow(capsText, rowInput, { version: oldVersion })
     const dirty = git(repo, ['status', '--porcelain', '--', skillPath, CAPABILITIES_FILE, VERSION_FILE], { allowFail: true }).out
-    const nothingToDo = preview.text === capsText && !dirty
+    const nothingToDo = !preview.changed && !dirty
 
     result.rowAdded = preview.added
 
     if (nothingToDo) {
+      result.version = oldVersion
       result.alreadyPublished = true
       result.warnings.push(`「${skillName}」此前已入库且内容无变化，本次没有产生任何改动`)
       log(`  · 内容无变化，跳过提交与版本变更（当前 v${oldVersion}）`)
     } else {
       const newVersion = bumpPatch(oldVersion)
       result.version = newVersion
-      const updated = upsertCapabilitiesRow(capsText, { ...rowInput, version: newVersion })
+      const updated = upsertCapabilitiesRow(capsText, rowInput, { version: newVersion })
 
       if (dryRun) {
         result.ok = true
@@ -344,6 +356,10 @@ export function runPublish({
             result.warnings.push('仓库没有 remote，跳过推送')
           }
         }
+      } else {
+        // --no-commit：入库和提交是一件事，不能只做一半。把刚写的两个文件还原，别留脏文件。
+        git(repo, ['checkout', '--', CAPABILITIES_FILE, VERSION_FILE], { allowFail: true })
+        result.warnings.push('--no-commit：清单与版本号已还原，本次没有改动入库')
       }
     }
 
