@@ -16,11 +16,17 @@
 //   8. 必须含 ## 触发条件 / ## 步骤 / ## 坑 / ## 验收标准，且**顺序正确**
 //   9. 技能里不许出现"需要用户回答的技术问题"（技能的读者是 AI，不是人）
 //
+// 做"会不会泄密"的校验（这个失败代价最大，撤不回来）：
+//  10. 技能目录下的**所有文本文件**（SKILL.md + references/ + scripts/ +
+//      templates/ + assets/）都不许出现公网 IP、本机绝对路径、密钥、手机号、
+//      身份证、公司全称、真实邮箱、真实域名 —— 见 tools/sensitive-scan.mjs。
+//
 // 零第三方依赖（自己解析 frontmatter，不引 js-yaml）。
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { scanSensitive, readScannable } from './sensitive-scan.mjs'
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -258,6 +264,74 @@ function validate(root) {
   return { problems, warnings, skills }
 }
 
+/**
+ * 递归收集技能目录下所有**可当文本扫**的文件（跳过二进制、>256KB 的、隐藏目录）。
+ * 技能泄密不止发生在 SKILL.md：references/ 里的真实限额、scripts/ 里的写死口令
+ * 一样会跟着仓库公开。
+ */
+function collectTextFiles(dir, root, out = []) {
+  let entries
+  try {
+    entries = readdirSync(dir).sort()
+  } catch {
+    return out
+  }
+  for (const entry of entries) {
+    if (entry.startsWith('.')) continue
+    const full = join(dir, entry)
+    let st
+    try {
+      st = statSync(full)
+    } catch {
+      continue
+    }
+    if (st.isDirectory()) {
+      collectTextFiles(full, root, out)
+      continue
+    }
+    if (!st.isFile() || st.size === 0) continue
+    const text = readScannable(full)
+    if (text === null) continue
+    out.push({ path: relative(root, full), real: full, text })
+  }
+  return out
+}
+
+/**
+ * 敏感信息检查（第 10 类）。做成独立的后置遍历，不改动上面任何原有检查：
+ * 逐技能目录扫全部文本文件，problem 级进 problems、warn 级进 warnings。
+ */
+function scanSkillsForSensitive(root) {
+  const problems = []
+  const warnings = []
+  const detail = []
+  if (!existsSync(root)) return { problems, warnings, detail }
+
+  for (const entry of readdirSync(root).sort()) {
+    const dir = join(root, entry)
+    let isDir = false
+    try {
+      isDir = statSync(dir).isDirectory()
+    } catch {
+      isDir = false
+    }
+    if (!isDir || !existsSync(join(dir, 'SKILL.md'))) continue
+
+    for (const f of collectTextFiles(dir, root)) {
+      const { hits, counts } = scanSensitive(f.text, { file: f.path })
+      if (!hits.length) continue
+      for (const h of hits) {
+        const at = `${f.path}:${h.line}:${h.column}`
+        const text = `${at}：${h.message}（规则 ${h.rule}，命中片段：${h.excerpt}）`
+        if (h.severity === 'problem') problems.push(text)
+        else warnings.push(text)
+      }
+      detail.push({ skill: entry, file: f.path, hits, counts })
+    }
+  }
+  return { problems, warnings, detail }
+}
+
 const args = process.argv.slice(2)
 if (args.includes('-h') || args.includes('--help')) {
   console.log(`用法: node tools/validate.mjs [--json] [--dir <技能根目录>]
@@ -270,12 +344,26 @@ const dirIdx = args.indexOf('--dir')
 const root = dirIdx >= 0 ? resolve(args[dirIdx + 1]) : findSkillsRoot()
 const result = validate(root)
 
+// 敏感信息检查：只**追加**错误/提醒，不动已有字段
+const sensitive = scanSkillsForSensitive(root)
+result.problems.push(...sensitive.problems)
+result.warnings.push(...sensitive.warnings)
+
+const sensitiveSummary = {
+  problems: sensitive.problems.length,
+  warnings: sensitive.warnings.length,
+  hits: sensitive.detail,
+}
+
 if (args.includes('--json')) {
-  console.log(JSON.stringify({ root, ok: result.problems.length === 0, ...result }, null, 2))
+  console.log(JSON.stringify({ root, ok: result.problems.length === 0, ...result, sensitive: sensitiveSummary }, null, 2))
 } else {
   console.log(`技能库：${root}`)
   console.log(`共 ${result.skills.length} 个技能\n`)
   for (const s of result.skills) console.log(`  · ${s.name}`)
+  console.log(
+    `\n🔒 敏感信息扫描（全目录文本文件）：${sensitiveSummary.problems} 个问题、${sensitiveSummary.warnings} 个提醒`,
+  )
   if (result.warnings.length) {
     console.log(`\n⚠️  建议（${result.warnings.length}）：`)
     for (const w of result.warnings) console.log(`  - ${w}`)
