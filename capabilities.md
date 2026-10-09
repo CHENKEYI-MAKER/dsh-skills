@@ -15,6 +15,7 @@ updated: 2026-10-08
 
 | name | 触发条件（一句话） | 维护人 | 版本 | 入库时间 |
 | --- | --- | --- | --- | --- |
+| company-skills-readme | 公司技能库使用说明 | 陈炯 | 0.2.1 | undefined |
 | customer-info-registration | 拿到新客户联系方式、要建档时 | 陈炯 | 0.1.0 | 2026-10-07 |
 | deploy-dsh-team-server | 要部署、上线或排查服务没起来时 | 陈炯 | 0.1.0 | 2026-10-07 |
 | expense-report | 要提交差旅、采购或招待费用报销时 | 陈炯 | 0.1.0 | 2026-10-07 |
