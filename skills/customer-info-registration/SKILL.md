@@ -5,6 +5,7 @@ whenToUse: 用户给出新客户的名称、联系人、电话或需求，要求
 metadata:
   author: 陈炯
   version: "0.1.0"
+  category: 客户
 ---
 
 # 新客户建档与录入

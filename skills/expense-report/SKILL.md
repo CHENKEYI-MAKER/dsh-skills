@@ -5,6 +5,7 @@ whenToUse: 用户说要报销、填报销单、贴票据，或给出费用金额
 metadata:
   author: 陈炯
   version: "0.1.0"
+  category: 财务
 ---
 
 # 填写与提交报销单

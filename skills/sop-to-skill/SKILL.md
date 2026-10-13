@@ -5,6 +5,7 @@ whenToUse: 用户说"帮我写个技能""把这个流程做成 skill""按刚才�
 metadata:
   author: 陈炯
   version: "0.2.0"
+  category: 通用
 ---
 
 # 把访谈内容整理成技能

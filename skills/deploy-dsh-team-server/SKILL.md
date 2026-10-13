@@ -5,6 +5,7 @@ whenToUse: 用户说要部署、上线、更新服务器上的 DSH 团队版，�
 metadata:
   author: 陈炯
   version: "0.1.0"
+  category: 技术
 ---
 
 # DSH 团队版部署到服务器

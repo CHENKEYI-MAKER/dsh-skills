@@ -5,6 +5,7 @@ whenToUse: 用户提到「公司技能库」「技能怎么来的」「技能没
 metadata:
   author: 陈炯
   version: "0.1.0"
+  category: 通用
 ---
 
 # 公司技能库：它是怎么转起来的
